@@ -10,6 +10,20 @@
   <a href="https://aiengineeringfromscratch.com"><img src="https://img.shields.io/badge/web-aiengineeringfromscratch.com-3553ff?style=flat-square&labelColor=fafaf5" alt="Website"></a>
 </p>
 
+> **This is a fork.** The original course is
+> [AI Engineering from Scratch](https://github.com/rohitg00/ai-engineering-from-scratch)
+> by Rohit Ghumare — everything below is his, unchanged.
+>
+> What this fork adds: the GPU lessons, made runnable on rented hardware.
+> The course is written to run on a laptop, so its heavy examples live in prose —
+> `docs/en.md` names Llama-3.1-8B and Stable Diffusion, but no file executes them.
+> Here each covered lesson gets two scripts: its own code shipped to a GPU
+> untouched, and its *"Use It"* section built out at full scale. You need one pip
+> package and no graphics card.
+>
+> Start at [`krauncher/README.md`](krauncher/README.md) · roadmap in
+> [`krauncher/PLAN.md`](krauncher/PLAN.md)
+
 ## From the creator of [Agent Memory - #1 Persistent memory ⭐](https://github.com/rohitg00/agentmemory) <a href="https://github.com/rohitg00/agentmemory/stargazers"><img src="https://img.shields.io/github/stars/rohitg00/agentmemory?style=flat-square&labelColor=fafaf5&color=3553ff" alt="GitHub stars"></a> which naturally works with any agents or chat assistants.
 
 ```
