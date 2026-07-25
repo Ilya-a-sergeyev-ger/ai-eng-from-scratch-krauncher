@@ -25,7 +25,7 @@ import asyncio
 import os
 
 # ─────────────────────────── Krauncher wrapper ───────────────────────────
-from krauncher import KrauncherClient
+from krauncher import KrauncherClient, TaskError
 
 client = KrauncherClient()  # reads CAS_API_KEY / .env from the folder you run in
 
@@ -60,79 +60,98 @@ def finetune(hf_token: str = ""):
     # torch/transformers/peft for itself; whatever it imports that isn't already
     # on the worker, Krauncher installs automatically.
     print("Task started. Importing torch / transformers / peft...", flush=True)
-    import torch
-    # Imported for its side effect: transformers needs bitsandbytes for 4-bit
-    # (QLoRA) but imports it only transitively, which the auto-installer can't
-    # see. Importing it here makes Krauncher install it on the worker.
-    import bitsandbytes  # noqa: F401
-    from transformers import (
-        AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig,
-        DataCollatorForLanguageModeling, Trainer, TrainingArguments,
-    )
-    from peft import LoraConfig, TaskType, get_peft_model
-    from datasets import load_dataset
+    # One handler for the whole task. With E2E on, the worker's stderr and
+    # traceback do not reach the client; stdout is relayed, so on any failure
+    # print the full traceback to stdout before re-raising -- otherwise the
+    # client just sees "task failed" with no cause.
+    try:
+        import torch
+        # Imported for its side effect: transformers needs bitsandbytes for
+        # 4-bit (QLoRA) but imports it only transitively, which the auto-installer
+        # can't see. Importing it here makes Krauncher install it on the worker.
+        import bitsandbytes  # noqa: F401
+        from transformers import (
+            AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig,
+            DataCollatorForLanguageModeling, Trainer, TrainingArguments,
+        )
+        from peft import LoraConfig, TaskType, get_peft_model
+        from datasets import load_dataset
 
-    # The gated base model is downloaded from the Hub at runtime using the token
-    # passed in as an argument (read from HF_TOKEN on the client). The public
-    # dataset was pre-fetched into /data by the bridge.
-    MODEL_ID = "meta-llama/Llama-3.1-8B"
-    dataset_path = "/data/tatsu-lab__alpaca"
+        # The gated base model is downloaded from the Hub at runtime using the
+        # token passed in as an argument (read from HF_TOKEN on the client). The
+        # public dataset was pre-fetched into /data by the bridge.
+        MODEL_ID = "meta-llama/Llama-3.1-8B"
+        dataset_path = "/data/tatsu-lab__alpaca"
 
-    # ─────────── lesson "Use It" code: QLoRA (4-bit base + fp16 LoRA) ───────────
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_use_double_quant=True,
-    )
-    print("Loading base model in 4-bit...", flush=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID, quantization_config=bnb_config, device_map="auto",
-        token=hf_token or None,
-    )
-    model.config.use_cache = False
-    model = get_peft_model(model, LoraConfig(
-        task_type=TaskType.CAUSAL_LM, r=16, lora_alpha=32,
-        lora_dropout=0.05, target_modules=["q_proj", "v_proj"],
-    ))
-    model.print_trainable_parameters()
+        # ─────────── lesson "Use It" code: QLoRA (4-bit base + fp16 LoRA) ───────────
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+        print("Loading base model in 4-bit...", flush=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_ID, quantization_config=bnb_config, device_map="auto",
+            token=hf_token or None,
+        )
+        model.config.use_cache = False
+        model = get_peft_model(model, LoraConfig(
+            task_type=TaskType.CAUSAL_LM, r=16, lora_alpha=32,
+            lora_dropout=0.05, target_modules=["q_proj", "v_proj"],
+        ))
+        model.print_trainable_parameters()
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=hf_token or None)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=hf_token or None)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
-    print("Loading + tokenizing dataset...", flush=True)
-    dataset = load_dataset(dataset_path)["train"].select(range(5000))
-    dataset = dataset.map(
-        lambda ex: tokenizer(ex["text"], truncation=True,
-                             max_length=512, padding="max_length"),
-        remove_columns=dataset.column_names,
-    )
+        print("Loading + tokenizing dataset...", flush=True)
+        dataset = load_dataset(dataset_path)["train"].select(range(5000))
+        dataset = dataset.map(
+            lambda ex: tokenizer(ex["text"], truncation=True,
+                                 max_length=512, padding="max_length"),
+            remove_columns=dataset.column_names,
+        )
 
-    print("Starting LoRA training...", flush=True)
-    trainer = Trainer(
-        model=model,
-        args=TrainingArguments(
-            output_dir="/tmp/lora-llama",
-            num_train_epochs=3,
-            per_device_train_batch_size=4,
-            gradient_accumulation_steps=4,
-            learning_rate=2e-4,
-            fp16=True,
-            logging_steps=10,
-            save_strategy="no",
-            report_to="none",
-            optim="paged_adamw_8bit",
-        ),
-        train_dataset=dataset,
-        data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
-    )
-    trainer.train()
-    # ────────── end lesson "Use It" code ──────────
+        print("Starting LoRA training...", flush=True)
+        trainer = Trainer(
+            model=model,
+            args=TrainingArguments(
+                output_dir="/tmp/lora-llama",
+                num_train_epochs=3,
+                per_device_train_batch_size=4,
+                gradient_accumulation_steps=4,
+                learning_rate=2e-4,
+                fp16=True,
+                logging_steps=10,
+                save_strategy="no",
+                report_to="none",
+                optim="paged_adamw_8bit",
+            ),
+            train_dataset=dataset,
+            data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+        )
+        trainer.train()
+        # ────────── end lesson "Use It" code ──────────
 
-    # Return only JSON-serializable data -- the model and tensors cannot cross
-    # back from the GPU, only plain values do.
-    return {"train_loss": round(trainer.state.log_history[-1]["train_loss"], 4)}
+        # Return only JSON-serializable data -- the model and tensors cannot
+        # cross back from the GPU, only plain values do.
+        return {"train_loss": round(trainer.state.log_history[-1]["train_loss"], 4)}
+    except Exception:
+        import traceback
+        print("TASK FAILED:\n" + traceback.format_exc(), flush=True)
+        raise
+
+
+def _print_progress(msg):
+    """Relay everything from the GPU (stdout + stderr) so progress and any error
+    output show up live."""
+    if msg.get("type") not in ("stdout", "stderr"):
+        return
+    text = (msg.get("data") or {}).get("text") or ""
+    for line in text.splitlines():
+        print(f"  {line.rstrip()}", flush=True)
 
 
 async def main():
@@ -153,7 +172,12 @@ async def main():
     print(f"Submitted {handle.task_id} -- waiting for the cheapest GPU...",
           flush=True)
 
-    result = await handle.wait(timeout=14700)
+    try:
+        result = await handle.wait(on_log=_print_progress, timeout=14700)
+    except TaskError as e:
+        print("\n--- task failed on the GPU ---")
+        print(getattr(e, "remote_traceback", None) or e)
+        return
 
     print("\n--- done ---")
     print(f"Ran on: {result.actual_gpu}")
