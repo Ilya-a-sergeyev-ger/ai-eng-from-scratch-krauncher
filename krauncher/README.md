@@ -47,3 +47,26 @@ this specific example you need:
 
 The token is read from the environment (never stored in `.env`) and passed to
 the worker E2E-encrypted. Examples built on open models need none of this.
+
+## Beyond the examples — bring your own code
+
+Nothing here is specific to the course. The same wrapper turns any GPU Python
+job — your own training, fine-tune, or inference — into a Krauncher task: move
+the imports inside a `@client.task` function, return JSON-serializable results,
+call it from an async `main`. It's thin and additive (the lesson's `lora.py` is
+left untouched next to `lora_finetune.py`), and you don't have to write it by
+hand — Krauncher documents its API for coding assistants (`llms.txt` on
+krauncher.com), so you can point your LLM at your script and ask it to wrap it.
+
+Why run it this way:
+
+- **You don't pick the GPU or do the "will it fit?" math.** Krauncher reads the
+  code, sizes the VRAM, and runs it on the cheapest card on the market that fits
+  — not a flagship you overpay for, not one that runs out of memory.
+- **You see the price before you spend GPU-seconds.** A pre-run estimate gives
+  cost and time per GPU, so you decide before you rent — and can tune your
+  config (batch size, gradient checkpointing) against a real number instead of
+  guessing, then re-check.
+- **One package locally, nothing to manage.** torch and the rest run on the
+  host; your code and data travel E2E-encrypted; you get back the result, the
+  GPU it ran on, and what it cost.
