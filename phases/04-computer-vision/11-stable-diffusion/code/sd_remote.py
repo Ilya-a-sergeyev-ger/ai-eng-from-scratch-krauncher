@@ -13,12 +13,10 @@ in phase 11, which needs a ~48 GB one.
 
 Two things worth knowing:
 
-* The lesson saves its image to `~/sd_demo.png` **on the worker**, and the
-  sandbox is discarded when the task ends. `artifacts=True` would not help:
-  it returns what a task writes in its working directory, and the lesson
-  writes to a home directory instead. Rewriting that path would mean editing
-  the lesson, which is the one thing this script does not do -- run
-  `sd_inference.py` next to it to get images back on your machine.
+* The lesson saves its image to `~/sd_demo.png`, and you get it back. A task
+  runs with HOME set to its own working directory, so writing to `~` is
+  writing where `artifacts=True` collects from -- the lesson's own path works
+  untouched, which is the point.
 * The lesson asks for `runwayml/stable-diffusion-v1-5`. Runway withdrew that
   repository, but the Hub still redirects it to the maintained mirror, so the
   call resolves. `sd_inference.py` names the mirror directly.
@@ -32,6 +30,7 @@ Run it from the repo's `krauncher/` folder, which holds the shared config:
 """
 
 import asyncio
+import tempfile
 from pathlib import Path
 
 from krauncher import KrauncherClient, TaskError
@@ -70,6 +69,7 @@ async def main():
         pip=["diffusers", "transformers", "accelerate"],
         timeout=1800,
         disk_gb=30,  # SD 1.5 weights land in the Hub cache
+        artifacts=True,  # the lesson writes to ~, which is its workspace
         stream_stderr=True,
     )
     print(f"Submitted {handle.task_id} -- waiting for the cheapest GPU...",
@@ -86,7 +86,11 @@ async def main():
     print(f"Ran on: {result.actual_gpu}")
     print(f"Cost:   {result.total_charged_ku} KU "
           f"({result.total_charged_local} {result.billing_currency})")
-    print("The image stayed on the worker -- see sd_inference.py to get one back.")
+
+    out_dir = Path(tempfile.mkdtemp(prefix="sd-lesson-"))
+    count = result.download(str(out_dir))
+    print(f"Files:  {result.files or 'none'}"
+          + (f" -> {out_dir}" if count else ""))
 
 
 if __name__ == "__main__":
