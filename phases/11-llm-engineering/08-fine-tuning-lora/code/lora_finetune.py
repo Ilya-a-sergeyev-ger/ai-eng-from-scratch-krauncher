@@ -72,10 +72,60 @@ def finetune(hf_token: str = ""):
         import bitsandbytes  # noqa: F401
         from transformers import (
             AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig,
-            DataCollatorForLanguageModeling, Trainer, TrainingArguments,
+            DataCollatorForLanguageModeling, Trainer, TrainerCallback,
+            TrainingArguments,
         )
         from peft import LoraConfig, TaskType, get_peft_model
         from datasets import load_dataset
+
+        class _ProgressBar(TrainerCallback):
+            """Per-epoch in-place progress bar: \\r overwrites on every step,
+            \\n only at epoch end -- one line per epoch, no scroll.
+
+            On logging steps we append a \\n to flush the relay pipeline
+            (which buffers output that lacks \\n), then \\033[A to move the
+            cursor back up so the bar line is reused rather than scrolled."""
+
+            BAR = 25
+
+            def on_train_begin(self, args, state, control, **kwargs):
+                self.total_epochs = int(args.num_train_epochs)
+                self.steps_per_epoch = max(
+                    1, state.max_steps // self.total_epochs)
+
+            def _last_loss(self, state):
+                return next((h["loss"] for h in reversed(state.log_history)
+                             if "loss" in h), None)
+
+            def on_step_end(self, args, state, control, **kwargs):
+                total = self.total_epochs
+                cur = min(total,
+                          (state.global_step - 1) // self.steps_per_epoch + 1)
+                done = (state.global_step - 1) % self.steps_per_epoch + 1
+                filled = int(self.BAR * done / self.steps_per_epoch)
+                bar = "█" * filled + "░" * (self.BAR - filled)
+                msg = (f"\rEpoch {cur}/{total} [{bar}] "
+                       f"{done:3d}/{self.steps_per_epoch}")
+                loss = self._last_loss(state)
+                if loss is not None:
+                    msg += f"  loss={loss:.4f}"
+                # Every logging_steps, append \\n to flush the relay pipeline,
+                # then \\033[A to return the cursor to the bar line so the
+                # terminal doesn't scroll.
+                if state.global_step % args.logging_steps == 0:
+                    msg += "\n\033[A"
+                print(msg, end="", flush=True)
+
+            def on_epoch_end(self, args, state, control, **kwargs):
+                total = self.total_epochs
+                ep = int(round(state.epoch))
+                loss = self._last_loss(state)
+                bar = "█" * self.BAR
+                msg = (f"\rEpoch {ep}/{total} [{bar}] "
+                       f"{self.steps_per_epoch}/{self.steps_per_epoch}")
+                if loss is not None:
+                    msg += f"  loss={loss:.4f}"
+                print(msg, flush=True)  # default end="\\n"
 
         # The gated base model is downloaded from the Hub at runtime using the
         # token passed in as an argument (read from HF_TOKEN on the client). The
@@ -124,14 +174,20 @@ def finetune(hf_token: str = ""):
                 gradient_accumulation_steps=4,
                 learning_rate=2e-4,
                 fp16=True,
-                logging_steps=10,
+                logging_steps=1,
                 save_strategy="no",
                 report_to="none",
                 optim="paged_adamw_8bit",
+                disable_tqdm=True,  # our _ProgressBar renders instead
             ),
             train_dataset=dataset,
             data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+            callbacks=[_ProgressBar()],
         )
+        # Drop the Trainer's default PrinterCallback (installed because
+        # disable_tqdm=True) so it doesn't dump raw log dicts over the bar.
+        from transformers.trainer_callback import PrinterCallback
+        trainer.remove_callback(PrinterCallback)
         trainer.train()
         # ────────── end lesson "Use It" code ──────────
 
@@ -145,13 +201,11 @@ def finetune(hf_token: str = ""):
 
 
 def _print_progress(msg):
-    """Relay everything from the GPU (stdout + stderr) so progress and any error
-    output show up live."""
+    """Relay the worker's stdout/stderr verbatim (GPU metrics skipped)."""
     if msg.get("type") not in ("stdout", "stderr"):
         return
     text = (msg.get("data") or {}).get("text") or ""
-    for line in text.splitlines():
-        print(f"  {line.rstrip()}", flush=True)
+    print(text, end="", flush=True)
 
 
 async def main():
