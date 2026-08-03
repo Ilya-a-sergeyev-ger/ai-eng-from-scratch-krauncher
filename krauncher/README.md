@@ -65,6 +65,7 @@ scripts from this folder, so `python ../phases/<lesson>/code/<script>`.
 |---|---|---|---|
 | `11-llm-engineering/08-fine-tuning-lora` | `lora_remote.py` | `lora_finetune.py` | QLoRA fine-tune of Llama-3.1-8B on 5,000 Alpaca examples, 3 epochs, 4-bit base with fp16 adapters; returns the training loss, the card and the bill. ~48 GB — the heavy end. Needs `HF_TOKEN`, see below. |
 | `04-computer-vision/11-stable-diffusion` | `sd_remote.py` | `sd_inference.py` | Stable Diffusion 1.5 in fp16 over four prompts, DPM-Solver++ at 25 steps; the 512x512 PNGs come back to your disk, with per-image seconds and cost. ~4 GB, measured at 1.81 s per image on an RTX 4060 Ti. |
+| `04-computer-vision/25-vision-language-models` | `main_remote.py` | `qwen3vl_cmer.py` | Qwen3-VL-8B answers two questions about each of 24 COCO photos — one the picture can answer, one it cannot — then scores every answer with CLIP and computes the lesson's Cross-Modal Error Rate over them: 0.0000 against 0.7917. 17.3 GB, 81 s and €0.0134 on an RTX A5000. |
 | `04-computer-vision/17-self-supervised-vision` | `main_remote.py` | `dinov2_linear_probe.py` | Freezes `facebook/dinov2-base`, embeds all 13,000 STL-10 images as 768-dim CLS vectors, then trains a linear probe on top and the same probe on raw pixels: 0.9951 against 0.3276. The light end — 1.16 GB, 97 s and €0.0138 on an RTX 2000 Ada. |
 
 The *learn it* half is the same shape everywhere: it reads the lesson's own
