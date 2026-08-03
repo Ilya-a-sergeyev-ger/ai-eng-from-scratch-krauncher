@@ -56,7 +56,22 @@ python ../phases/11-llm-engineering/08-fine-tuning-lora/code/lora_finetune.py
 This one needs ~48 GB of VRAM, and Krauncher works out that number from the
 code rather than making you guess. It reports which GPU ran it and what it cost.
 
-See [PLAN.md](PLAN.md) for which lessons get this treatment next.
+## Every pair
+
+Each lesson below has both halves. Paths are relative to `phases/`; run the
+scripts from this folder, so `python ../phases/<lesson>/code/<script>`.
+
+| Lesson | Learn it | Run it for real | What the full run does |
+|---|---|---|---|
+| `11-llm-engineering/08-fine-tuning-lora` | `lora_remote.py` | `lora_finetune.py` | QLoRA fine-tune of Llama-3.1-8B on 5,000 Alpaca examples, 3 epochs, 4-bit base with fp16 adapters; returns the training loss, the card and the bill. ~48 GB — the heavy end. Needs `HF_TOKEN`, see below. |
+| `04-computer-vision/11-stable-diffusion` | `sd_remote.py` | `sd_inference.py` | Stable Diffusion 1.5 in fp16 over four prompts, DPM-Solver++ at 25 steps; the 512x512 PNGs come back to your disk, with per-image seconds and cost. ~4 GB, measured at 1.81 s per image on an RTX 4060 Ti. |
+| `04-computer-vision/17-self-supervised-vision` | `main_remote.py` | `dinov2_linear_probe.py` | Freezes `facebook/dinov2-base`, embeds all 13,000 STL-10 images as 768-dim CLS vectors, then trains a linear probe on top and the same probe on raw pixels: 0.9951 against 0.3276. The light end — 1.16 GB, 97 s and €0.0138 on an RTX 2000 Ada. |
+
+The *learn it* half is the same shape everywhere: it reads the lesson's own
+file and ships it, untouched, to be executed remotely. Most of these lessons
+demonstrate their idea on tensors a laptop handles, so that half costs about a
+cent; Stable Diffusion is the exception — its own code takes the CUDA branch
+your laptop skips and paints a real image out there.
 
 ### Prerequisite for the LoRA fine-tune
 

@@ -233,11 +233,8 @@ async def main():
         print(getattr(e, "remote_traceback", None) or e)
         return
 
-    print("\n--- done ---")
-    print(f"Ran on: {result.actual_gpu}")
-    print(f"Loss:   {result.output['train_loss']}")
-    print(f"Cost:   {result.total_charged_ku} KU "
-          f"({result.total_charged_local} {result.billing_currency})")
+    # The card and the bill are already in Krauncher's own closing line.
+    print(f"\nLoss: {result.output['train_loss']}")
 
 
 if __name__ == "__main__":

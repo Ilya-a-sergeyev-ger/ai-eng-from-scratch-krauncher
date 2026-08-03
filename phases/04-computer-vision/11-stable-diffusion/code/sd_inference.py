@@ -132,14 +132,12 @@ async def main():
 
     seconds = result.output["seconds"]
     n = len(seconds)
-    print("\n--- done ---")
-    print(f"Ran on:    {result.actual_gpu}")
-    print(f"Pipeline:  {result.output['load_sec']}s to load, "
+    # The card and the total bill are already in Krauncher's own closing line;
+    # what it cannot know is that the bill bought n images.
+    print(f"\nPipeline:  {result.output['load_sec']}s to load, "
           f"{sum(seconds) / n:.2f}s per image over {n}")
-    print(f"Cost:      {result.total_charged_ku} KU "
-          f"({result.total_charged_local} {result.billing_currency})"
-          f" -- {result.total_charged_local / n:.4f} "
-          f"{result.billing_currency} per image")
+    print(f"Per image: {result.total_charged_local / n:.4f} "
+          f"{result.billing_currency}")
 
 
 if __name__ == "__main__":
